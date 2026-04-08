@@ -38,27 +38,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true });
   }
 
+  if (body.action === "migrate_all") {
+    var users = await sb.from("usuarios").select("*").neq("senha_hash", "auth");
+    if (!users.data) return NextResponse.json({ error: "Nenhum usuario" }, { status: 400 });
+    var migrated = 0;
+    for (var i = 0; i < users.data.length; i++) {
+      var u = users.data[i];
+      if (u.auth_id) continue;
+      var cr = await sb.auth.admin.createUser({ email: u.email, password: u.senha_hash, email_confirm: true });
+      if (cr.data?.user) {
+        await sb.from("usuarios").update({ auth_id: cr.data.user.id, senha_hash: "auth" }).eq("id", u.id);
+        migrated++;
+      }
+    }
+    return NextResponse.json({ success: true, migrated: migrated });
+  }
+
   if (body.action === "legacy_login") {
     var lr = await sb.from("usuarios").select("*, escolas(nome)").eq("email", body.email).eq("senha_hash", body.password).single();
     if (lr.error || !lr.data) return NextResponse.json({ error: "Credenciais invalidas" }, { status: 401 });
-    var cr = await sb.auth.admin.createUser({ email: body.email, password: body.password, email_confirm: true });
-    if (cr.data?.user) { await sb.from("usuarios").update({ auth_id: cr.data.user.id }).eq("id", lr.data.id); }
-    return NextResponse.json({ success: true, migrated: true });
-  }
-
-  if (body.action === "reset_password") {
-    var uc = await sb.from("usuarios").select("*").eq("email", body.email).single();
-    if (uc.error || !uc.data) return NextResponse.json({ error: "E-mail nao encontrado" }, { status: 404 });
-    if (!uc.data.auth_id) {
-      var tp = "temp" + Date.now() + "X";
-      var ac = await sb.auth.admin.createUser({ email: body.email, password: tp, email_confirm: true });
-      if (ac.data?.user) { await sb.from("usuarios").update({ auth_id: ac.data.user.id }).eq("id", uc.data.id); }
-    }
-    var anon = createClient(url, aKey);
-    var rr = await anon.auth.resetPasswordForEmail(body.email, { redirectTo: siteUrl });
-    if (rr.error) return NextResponse.json({ error: rr.error.message }, { status: 400 });
-    return NextResponse.json({ success: true });
-  }
-
-  return NextResponse.json({ error: "Acao desconhecida" }, { status: 400 });
-}
+    var cr2 = await sb.auth.admin.createUser({ email: body.email, password: body.password, email_confirm: true });
+    if (cr2.data?.user) { await sb.from("usuarios").update({ auth_id: cr2.data.user.id, senha_hash: "auth" }).eq("id", lr.data.id); }
+    return NextResponse.json({ success: true, mig​​​​​​​​​​​​​​​​
