@@ -11,7 +11,21 @@ export async function POST(req: Request) {
 
   if (body.action === "invite") {
     var ir = await sb.auth.admin.inviteUserByEmail(body.email, { data: { nome: body.nome }, redirectTo: siteUrl });
-    if (ir.error) return NextResponse.json({ error: ir.error.message }, { status: 400 });
+    if (ir.error) {
+      var authUsers = await sb.auth.admin.listUsers();
+      if (authUsers.data) {
+        var old = authUsers.data.users.find(function(u: any) { return u.email === body.email; });
+        if (old) {
+          await sb.auth.admin.deleteUser(old.id);
+          ir = await sb.auth.admin.inviteUserByEmail(body.email, { data: { nome: body.nome }, redirectTo: siteUrl });
+          if (ir.error) return NextResponse.json({ error: ir.error.message }, { status: 400 });
+        } else {
+          return NextResponse.json({ error: ir.error.message }, { status: 400 });
+        }
+      } else {
+        return NextResponse.json({ error: ir.error.message }, { status: 400 });
+      }
+    }
     var ur = await sb.from("usuarios").insert({ nome: body.nome, email: body.email, papel: body.papel, escola_id: body.escola_id, senha_hash: "auth", auth_id: ir.data.user.id, convidado: true }).select().single();
     if (ur.error) return NextResponse.json({ error: ur.error.message }, { status: 400 });
     if (body.permissoes && body.permissoes.length > 0) {
@@ -26,9 +40,9 @@ export async function POST(req: Request) {
       if (du.data.auth_id) {
         await sb.auth.admin.deleteUser(du.data.auth_id);
       } else {
-        var authUsers = await sb.auth.admin.listUsers();
-        if (authUsers.data) {
-          var found = authUsers.data.users.find(function(u: any) { return u.email === du.data.email; });
+        var authUsers2 = await sb.auth.admin.listUsers();
+        if (authUsers2.data) {
+          var found = authUsers2.data.users.find(function(u: any) { return u.email === du.data.email; });
           if (found) { await sb.auth.admin.deleteUser(found.id); }
         }
       }
@@ -38,27 +52,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true });
   }
 
-  if (body.action === "migrate_all") {
-    var users = await sb.from("usuarios").select("*").neq("senha_hash", "auth");
-    if (!users.data) return NextResponse.json({ error: "Nenhum usuario" }, { status: 400 });
-    var migrated = 0;
-    for (var i = 0; i < users.data.length; i++) {
-      var u = users.data[i];
-      if (u.auth_id) continue;
-      var cr = await sb.auth.admin.createUser({ email: u.email, password: u.senha_hash, email_confirm: true });
-      if (cr.data?.user) {
-        await sb.from("usuarios").update({ auth_id: cr.data.user.id, senha_hash: "auth" }).eq("id", u.id);
-        migrated++;
-      }
-    }
-    return NextResponse.json({ success: true, migrated: migrated });
-  }
-
   if (body.action === "legacy_login") {
     var lr = await sb.from("usuarios").select("*, escolas(nome)").eq("email", body.email).eq("senha_hash", body.password).single();
     if (lr.error || !lr.data) return NextResponse.json({ error: "Credenciais invalidas" }, { status: 401 });
-    var cr2 = await sb.auth.admin.createUser({ email: body.email, password: body.password, email_confirm: true });
-    if (cr2.data?.user) { await sb.from("usuarios").update({ auth_id: cr2.data.user.id, senha_hash: "auth" }).eq("id", lr.data.id); }
+    var cr = await sb.auth.admin.createUser({ email: body.email, password: body.password, email_confirm: true });
+    if (cr.data?.user) { await sb.from("usuarios").update({ auth_id: cr.data.user.id, senha_hash: "auth" }).eq("id", lr.data.id); }
     return NextResponse.json({ success: true, migrated: true });
   }
 
