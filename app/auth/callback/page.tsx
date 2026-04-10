@@ -11,26 +11,61 @@ export default function AuthCallback() {
   var _d = useState(false); var ld = _d[0]; var setLd = _d[1];
   var _e = useState(false); var ready = _e[0]; var setReady = _e[1];
   var _f = useState(false); var done = _f[0]; var setDone = _f[1];
+  var _g = useState(true); var checking = _g[0]; var setChecking = _g[1];
 
   useEffect(function() {
-    var hash = window.location.hash;
-    if (hash) {
-      supabase.auth.getSession().then(function() { setReady(true); });
+    var handled = false;
+
+    var sub = supabase.auth.onAuthStateChange(function(event) {
+      if (handled) return;
+      if (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY" || event === "TOKEN_REFRESHED") {
+        handled = true;
+        setReady(true);
+        setChecking(false);
+      }
+    });
+
+    var params = new URLSearchParams(window.location.search);
+    var code = params.get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(function(res) {
+        if (res.error) {
+          setErr("Link expirado. Peca um novo convite.");
+          setChecking(false);
+        }
+      });
     } else {
-      var params = new URLSearchParams(window.location.search);
-      var code = params.get("code");
-      if (code) {
-        supabase.auth.exchangeCodeForSession(code).then(function(res) {
-          if (!res.error) { setReady(true); }
-          else { setErr("Link expirado. Peca um novo convite."); }
-        });
+      var hash = window.location.hash;
+      if (hash && hash.includes("access_token")) {
+        setTimeout(function() {
+          supabase.auth.getSession().then(function(res) {
+            if (res.data.session) {
+              if (!handled) { handled = true; setReady(true); setChecking(false); }
+            } else {
+              if (!handled) { setErr("Sessao expirada. Peca um novo convite."); setChecking(false); }
+            }
+          });
+        }, 1500);
       } else {
         supabase.auth.getSession().then(function(res) {
-          if (res.data.session) { setReady(true); }
-          else { setErr("Link invalido. Peca um novo convite."); }
+          if (res.data.session) {
+            if (!handled) { handled = true; setReady(true); setChecking(false); }
+          } else {
+            setTimeout(function() {
+              supabase.auth.getSession().then(function(res2) {
+                if (res2.data.session) {
+                  if (!handled) { handled = true; setReady(true); setChecking(false); }
+                } else {
+                  if (!handled) { setErr("Link invalido. Peca um novo convite."); setChecking(false); }
+                }
+              });
+            }, 2000);
+          }
         });
       }
     }
+
+    return function() { sub.data.subscription.unsubscribe(); };
   }, []);
 
   async function save() {
@@ -61,7 +96,7 @@ export default function AuthCallback() {
         <h2 style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: "0 0 4px" }}>Defina sua senha</h2>
         <p style={{ fontSize: 14, color: C.muted, margin: "0 0 24px" }}>Crie uma senha para acessar o Coordinator</p>
         {err && <div style={{ background: C.pinkLight, color: C.pink, padding: "10px 14px", borderRadius: 12, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{err}</div>}
-        {!ready && !err && <p style={{ fontSize: 14, color: C.muted, textAlign: "center" }}>Verificando convite...</p>}
+        {checking && !err && <p style={{ fontSize: 14, color: C.muted, textAlign: "center" }}>Verificando convite...</p>}
         {ready && <div>
           <div style={{ marginBottom: 16 }}><label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: "block", marginBottom: 6 }}>Nova senha</label><input type="password" value={pw} onChange={function(e) { setPw(e.target.value); }} placeholder="Minimo 6 caracteres" style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "2px solid " + C.border, fontSize: 15, outline: "none", boxSizing: "border-box" }} /></div>
           <div style={{ marginBottom: 24 }}><label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: "block", marginBottom: 6 }}>Confirmar senha</label><input type="password" value={pw2} onChange={function(e) { setPw2(e.target.value); }} placeholder="Repita a senha" style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "2px solid " + C.border, fontSize: 15, outline: "none", boxSizing: "border-box" }} /></div>
