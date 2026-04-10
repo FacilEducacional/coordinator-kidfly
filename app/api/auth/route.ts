@@ -5,7 +5,7 @@ export async function POST(req: Request) {
   var url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   var sKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   var aKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-  var siteUrl = "https://coordinator-kidfly.vercel.app";
+  var siteUrl = "https://coordinator-kidfly.vercel.app/auth/callback";
   var sb = createClient(url, sKey, { auth: { autoRefreshToken: false, persistSession: false } });
   var body = await req.json();
 
